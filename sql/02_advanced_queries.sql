@@ -1,7 +1,5 @@
--- ================================================================
 -- QUERY 1: Top 10 Symbols by Open Interest Change Across Exchanges
--- Business Purpose: Identify instruments with highest trading interest momentum
--- ================================================================
+-- Purpose: Identify instruments with highest trading interest momentum
 
 WITH oi_changes AS (
     SELECT 
@@ -51,10 +49,8 @@ NIFTY       | NSE      | 4,892,300     | 28,445,200        | 78,234,560        |
 */
 
 
--- ================================================================
 -- QUERY 2: Volatility Analysis - 7-Day Rolling Std Dev for NIFTY Options
--- Business Purpose: Measure price volatility for risk assessment
--- ================================================================
+-- Purpose: Measure price volatility for risk assessment
 
 WITH daily_closes AS (
     SELECT 
@@ -125,11 +121,9 @@ trade_date | expiry_date | strike_price | option_type | close_price | volatility
 */
 
 
--- ================================================================
 -- QUERY 3: Cross-Exchange Comparison (NSE vs MCX Futures)
--- Business Purpose: Compare settlement prices across exchanges
--- Note: Uses NSE data as template; extend with actual MCX data
--- ================================================================
+-- Purpose: Compare settlement prices across exchanges
+-- Note: Using NSE data only
 
 WITH exchange_settlements AS (
     SELECT 
@@ -186,10 +180,8 @@ BANKNIFTY | 2019-10-31 | 28,456.80        | 456,789    | 12,345     | 5.60
 */
 
 
--- ================================================================
 -- QUERY 4: Option Chain Summary - Grouped by Expiry and Strike
--- Business Purpose: Build option chain view for traders
--- ================================================================
+-- Purpose: Build option chain view for traders
 
 WITH option_summary AS (
     SELECT 
@@ -261,9 +253,7 @@ NIFTY     | 2019-08-29  | 11100        | 178.90     | 23,456      | 456,789 | 19
 
 -- ================================================================
 -- QUERY 5: Performance-Optimized Max Volume in Last 30 Days
--- Business Purpose: Identify high-liquidity trading opportunities
--- Uses window functions and indexes for sub-second performance
--- ================================================================
+-- Purpose: Identify high-liquidity trading opportunities
 
 WITH ranked_volumes AS (
     SELECT 
@@ -300,20 +290,6 @@ WHERE volume_rank <= 5  -- Top 5 volume days per symbol
 ORDER BY daily_volume DESC
 LIMIT 50;
 
--- Alternative with materialized view (even faster)
-/*
-SELECT 
-    symbol,
-    trade_date,
-    total_volume as daily_volume,
-    total_value as daily_value_lakh,
-    total_oi as avg_open_interest
-FROM mv_daily_instrument_summary
-WHERE trade_date >= CURRENT_DATE - INTERVAL '30 days'
-ORDER BY total_volume DESC
-LIMIT 50;
-*/
-
 /*
 Sample Output:
 symbol      | instrument_type | trade_date | daily_volume | daily_value_lakh | avg_open_interest
@@ -325,8 +301,7 @@ NIFTY       | OPTIDX          | 2019-08-22 | 7,234,567    | 389,456.75       | 3
 
 -- ================================================================
 -- QUERY 6: Intraday Price Movement Analysis (High-Low Range)
--- Business Purpose: Identify volatile trading sessions
--- ================================================================
+-- Purpose: Identify volatile trading sessions
 
 WITH price_movements AS (
     SELECT 
@@ -378,8 +353,7 @@ NIFTY       | 2019-08-05 | 178.90    | 4.23      | 2,345,678    | Medium Volatil
 
 -- ================================================================
 -- QUERY 7: Most Active Options by Expiry Month
--- Business Purpose: Identify preferred expiry cycles for trading
--- ================================================================
+-- Purpose: Identify preferred expiry cycles for trading
 
 WITH expiry_activity AS (
     SELECT 

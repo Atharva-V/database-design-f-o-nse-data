@@ -100,19 +100,19 @@ erDiagram
 
 ## Relationships
 
-1. **EXCHANGES → INSTRUMENTS** (1:N)
+1. **EXCHANGES to INSTRUMENTS** (1:N)
    - One exchange lists many instruments
    - Supports cross-exchange comparison
 
-2. **INSTRUMENTS → EXPIRIES** (1:N)
+2. **INSTRUMENTS to EXPIRIES** (1:N)
    - One instrument has many expiry contracts
    - Handles options chain efficiently
 
-3. **EXPIRIES → TRADES** (1:N)
+3. **EXPIRIES to TRADES** (1:N)
    - One contract generates many daily trades
    - Primary query path for analytics
 
-4. **INSTRUMENTS → TRADES** (1:N)
+4. **INSTRUMENTS to TRADES** (1:N)
    - Direct reference for instrument-level aggregations
    - Denormalized for query performance
 

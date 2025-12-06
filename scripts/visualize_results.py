@@ -49,7 +49,7 @@ def plot_oi_trends():
     plt.xticks(rotation=45)
     plt.tight_layout()
     plt.savefig(output_dir / 'oi_trends.png', dpi=300)
-    print("✅ Saved: oi_trends.png")
+    print("Saved: oi_trends.png")
 
 
 def plot_volume_distribution():
@@ -71,7 +71,7 @@ def plot_volume_distribution():
     plt.yscale('log')  # Log scale for better visualization
     plt.tight_layout()
     plt.savefig(output_dir / 'volume_distribution.png', dpi=300)
-    print("✅ Saved: volume_distribution.png")
+    print("Saved: volume_distribution.png")
 
 
 def plot_volatility_heatmap():
@@ -109,9 +109,9 @@ def plot_volatility_heatmap():
         plt.xticks(rotation=45)
         plt.tight_layout()
         plt.savefig(output_dir / 'volatility_heatmap.png', dpi=300)
-        print("✅ Saved: volatility_heatmap.png")
+        print("Saved: volatility_heatmap.png")
     else:
-        print("⚠️ No data for volatility heatmap")
+        print("No data for volatility heatmap")
 
 
 def plot_option_chain():
@@ -154,9 +154,9 @@ def plot_option_chain():
         ax.legend(fontsize=12)
         plt.tight_layout()
         plt.savefig(output_dir / 'option_chain_visualization.png', dpi=300)
-        print("✅ Saved: option_chain_visualization.png")
+        print("Saved: option_chain_visualization.png")
     else:
-        print("⚠️ No data for option chain")
+        print("No data for option chain")
 
 
 def main():
@@ -169,11 +169,11 @@ def main():
         plot_volatility_heatmap()
         plot_option_chain()
         
-        print("\n✅ All visualizations generated successfully!")
-        print(f"📁 Output directory: {output_dir.absolute()}")
+        print("\nAll visualizations generated successfully!")
+        print(f"Output directory: {output_dir.absolute()}")
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
     
     finally:
         conn.close()

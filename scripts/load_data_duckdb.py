@@ -1,7 +1,6 @@
 """
-F&O Database Analytics - DuckDB Version (Alternative)
-Faster loading and querying for analytical workloads
-Suitable for local development and testing
+F&O Database Analytics - Data Loader
+Loads NSE F&O data into DuckDB database
 """
 
 import duckdb

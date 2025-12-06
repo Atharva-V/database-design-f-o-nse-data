@@ -1,16 +1,12 @@
--- ================================================================
 -- QUERY OPTIMIZATION AND EXPLAIN ANALYZE
--- Demonstrates performance improvements with indexes and partitioning
--- ================================================================
+-- Demonstrates performance improvements with indexes
 
--- ================================================================
 -- BENCHMARK 1: Top Volume Query - Before and After Optimization
--- ================================================================
 
 -- BEFORE OPTIMIZATION (No indexes on volume columns)
--- Expected: Sequential scan, ~2-5 seconds for 2.5M rows
+-- Expected: Sequential scan
 
-EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+EXPLAIN ANALYZE
 SELECT 
     i.symbol,
     t.trade_date,
@@ -55,7 +51,7 @@ ON trades(trade_date, instrument_id, contracts, value_in_lakh)
 WHERE contracts > 0;
 
 -- Re-run with optimization
-EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+EXPLAIN ANALYZE
 SELECT 
     i.symbol,
     t.trade_date,
@@ -99,16 +95,11 @@ KEY OPTIMIZATIONS:
 */
 
 
--- ================================================================
 -- BENCHMARK 2: Time-Series Aggregation with Window Functions
--- ================================================================
 
--- Optimized query with BRIN index on timestamp
-CREATE INDEX IF NOT EXISTS idx_trades_timestamp_brin 
-ON trades USING BRIN(timestamp) 
-WITH (pages_per_range = 128);
+-- Using timestamp index for time-series queries
 
-EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+EXPLAIN ANALYZE
 WITH daily_data AS (
     SELECT 
         i.symbol,
@@ -170,12 +161,10 @@ KEY OBSERVATIONS:
 */
 
 
--- ================================================================
--- BENCHMARK 3: Open Interest Analysis with Partitioning
--- ================================================================
+-- BENCHMARK 3: Open Interest Analysis
 
 -- Show partition pruning in action
-EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+EXPLAIN ANALYZE
 SELECT 
     i.symbol,
     COUNT(*) as trade_count,
@@ -221,9 +210,7 @@ PARTITION PRUNING:
 */
 
 
--- ================================================================
 -- OPTIMIZATION SUMMARY
--- ================================================================
 
 /*
 INDEX STRATEGY COMPARISON:
@@ -280,8 +267,8 @@ SCALABILITY TO 10M+ ROWS:
 -- ALTER TABLE trades SET (parallel_workers = 4);
 -- SET max_parallel_workers_per_gather = 4;
 
--- Verify query plan uses parallel workers
-EXPLAIN (ANALYZE, BUFFERS)
+-- Verify query plan
+EXPLAIN ANALYZE
 SELECT 
     COUNT(*), 
     SUM(contracts), 

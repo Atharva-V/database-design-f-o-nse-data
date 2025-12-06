@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This document explains the design decisions for the Futures & Options database system built to handle NSE data (2.5M+ rows). The goal was to create a normalized, scalable database that supports efficient querying while maintaining data integrity across multiple exchanges (NSE, BSE, MCX).
+This document explains the design decisions for the Futures & Options database system built to handle NSE data. The database successfully loaded 2,533,210 trades across 328 instruments and 77,976 expiry contracts from August to November 2019. The goal was to create a normalized, scalable database that supports efficient querying while maintaining data integrity.
 
 ---
 
@@ -16,7 +16,7 @@ The schema consists of four main entities:
 
 **INSTRUMENTS**: Contains unique instrument definitions per exchange. This prevents redundancy since NIFTY on NSE is different from NIFTY on BSE. The composite unique key (exchange_id, instrument_type, symbol) enforces this constraint.
 
-**EXPIRIES**: This is a critical design choice. Instead of storing expiry_date, strike_price, and option_type in every trade record (which would mean 2.5M duplications), I created a separate table. For example, NIFTY options typically have 100 strikes across 3 expiries = 300 contracts. Without this table, those 300 specifications would be duplicated across potentially 27,000+ trades. The EXPIRIES table stores each contract specification once, saving approximately 95% storage space.
+**EXPIRIES**: This is a critical design choice. Instead of storing expiry_date, strike_price, and option_type in every trade record (which would mean 2.5M duplications), I created a separate table. The database has 77,976 unique contract specifications that would otherwise be duplicated millions of times across 2.5M trades. The EXPIRIES table stores each contract specification once, saving approximately 95% storage space.
 
 **TRADES**: Contains the actual trading data (OHLC, volume, open interest). I partitioned this table by trade_date since time-series queries are the most common access pattern. I also denormalized instrument_id here for performance reasons (explained below).
 
@@ -30,7 +30,7 @@ The schema follows Third Normal Form (3NF):
 
 **3NF**: No transitive dependencies. Exchange details are in EXCHANGES, not in INSTRUMENTS.
 
-**Strategic Denormalization**: I intentionally broke strict 3NF by including instrument_id directly in TRADES alongside expiry_id. In strict 3NF, TRADES would only reference expiry_id, and instrument_id would be accessed through EXPIRIES. However, most analytical queries aggregate by symbol (instrument level), not by specific expiry contracts. By including instrument_id in TRADES, I reduced query complexity from 2 joins to 1 join, improving performance by approximately 40-60%. The redundancy cost is minimal (4 bytes per row = 10MB for 2.5M rows), but the performance gain is substantial.
+**Strategic Denormalization**: I intentionally broke strict 3NF by including instrument_id directly in TRADES alongside expiry_id. In strict 3NF, TRADES would only reference expiry_id, and instrument_id would be accessed through EXPIRIES. However, most analytical queries aggregate by symbol (instrument level), not by specific expiry contracts. By including instrument_id in TRADES, I reduced query complexity from 2 joins to 1 join, improving performance by approximately 40-60%. The redundancy cost is minimal (4 bytes per row = 10MB for 2.53M rows), but the performance gain is substantial.
 
 ### 1.3 Why 3NF Instead of Star Schema?
 
@@ -81,9 +81,7 @@ I created multiple index types based on query patterns:
 
 **B-tree indexes** on instrument_id, trade_date, and strike_price for point lookups and range scans. These are standard indexes that work well for WHERE clauses and JOINs.
 
-**BRIN index** on timestamp column. Since timestamps are naturally sequential, BRIN indexes are 100x smaller than B-tree while still providing excellent performance for date range queries.
-
-**Covering index** on (instrument_id, trade_date, close, open_interest, contracts). This includes commonly selected columns so queries can read directly from the index without accessing the table.
+**Composite indexes** on frequently joined columns like (instrument_id, trade_date) and (exchange_id, instrument_type, symbol) to speed up multi-column queries.
 
 **Partial index** on contracts WHERE contracts > 0. About 30% of trade records have zero volume, so excluding them from the index reduces size and improves scan speed.
 
@@ -101,11 +99,13 @@ Testing showed significant improvements:
 
 ### Current System Performance
 
-With 2.5M rows across 3 months:
-- Database size: 822MB (including indexes)
-- Simple aggregations: 50-200ms
-- Complex joins: 200-500ms
-- Volatility calculations: 400-800ms
+With 2,533,210 rows across 3.5 months (Aug-Nov 2019):
+- Total trades: 2.53M
+- Total instruments: 328
+- Total expiries: 77,976
+- Simple aggregations: Fast (sub-second)
+- Complex joins with window functions: Efficient
+- 7 analytical queries: All execute successfully
 
 ### Projected Growth
 

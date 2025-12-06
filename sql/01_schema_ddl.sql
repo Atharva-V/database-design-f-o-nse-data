@@ -1,8 +1,5 @@
--- ================================================================
--- F&O DATABASE - DDL SCRIPT (PostgreSQL)
--- Schema Design: 3NF Normalized for Multi-Exchange F&O Data
--- Target: NSE, BSE, MCX with 10M+ row scalability
--- ================================================================
+-- F&O DATABASE SCHEMA
+-- 3NF normalized design for NSE futures and options data
 
 -- Drop existing tables (in dependency order)
 DROP TABLE IF EXISTS trades CASCADE;
@@ -10,9 +7,7 @@ DROP TABLE IF EXISTS expiries CASCADE;
 DROP TABLE IF EXISTS instruments CASCADE;
 DROP TABLE IF EXISTS exchanges CASCADE;
 
--- ================================================================
 -- 1. EXCHANGES TABLE
--- ================================================================
 CREATE TABLE exchanges (
     exchange_id SERIAL PRIMARY KEY,
     exchange_code VARCHAR(10) NOT NULL UNIQUE,  -- NSE, BSE, MCX
@@ -30,9 +25,7 @@ INSERT INTO exchanges (exchange_code, exchange_name) VALUES
     ('BSE', 'Bombay Stock Exchange'),
     ('MCX', 'Multi Commodity Exchange of India');
 
--- ================================================================
 -- 2. INSTRUMENTS TABLE
--- ================================================================
 CREATE TABLE instruments (
     instrument_id SERIAL PRIMARY KEY,
     exchange_id INT NOT NULL REFERENCES exchanges(exchange_id),
@@ -50,9 +43,7 @@ CREATE TABLE instruments (
 CREATE INDEX idx_instruments_symbol ON instruments(symbol, exchange_id);
 CREATE INDEX idx_instruments_type ON instruments(instrument_type);
 
--- ================================================================
 -- 3. EXPIRIES TABLE (Contract Specifications)
--- ================================================================
 CREATE TABLE expiries (
     expiry_id SERIAL PRIMARY KEY,
     instrument_id INT NOT NULL REFERENCES instruments(instrument_id),
@@ -72,9 +63,7 @@ CREATE INDEX idx_expiries_date ON expiries(expiry_date);
 CREATE INDEX idx_expiries_instrument ON expiries(instrument_id, expiry_date);
 CREATE INDEX idx_expiries_strike ON expiries(strike_price) WHERE option_type IN ('CE', 'PE');
 
--- ================================================================
--- 4. TRADES TABLE (Daily OHLC Data) - PARTITIONED
--- ================================================================
+-- 4. TRADES TABLE (Daily OHLC Data)
 CREATE TABLE trades (
     trade_id BIGSERIAL,
     expiry_id INT NOT NULL REFERENCES expiries(expiry_id),
@@ -113,11 +102,9 @@ CREATE TABLE trades_2019_11 PARTITION OF trades
 
 -- ================================================================
 -- PERFORMANCE INDEXES
--- ================================================================
-
 -- Time-series queries (most common access pattern)
 CREATE INDEX idx_trades_date ON trades(trade_date DESC);
-CREATE INDEX idx_trades_timestamp ON trades(timestamp DESC) WITH (fillfactor = 90);
+CREATE INDEX idx_trades_timestamp ON trades(timestamp DESC);
 
 -- Instrument-based queries
 CREATE INDEX idx_trades_instrument_date ON trades(instrument_id, trade_date DESC);
@@ -133,89 +120,10 @@ CREATE INDEX idx_trades_volume ON trades(contracts DESC) WHERE contracts > 0;
 CREATE INDEX idx_trades_covering ON trades(instrument_id, trade_date, close, open_interest, contracts);
 
 -- BRIN index for timestamp (efficient for sequential data)
-CREATE INDEX idx_trades_timestamp_brin ON trades USING BRIN(timestamp) WITH (pages_per_range = 128);
+-- B-tree index on timestamp for range queries
+CREATE INDEX idx_trades_timestamp ON trades(timestamp);
 
--- ================================================================
--- MATERIALIZED VIEW FOR DAILY AGGREGATES (Performance Optimization)
--- ================================================================
-CREATE MATERIALIZED VIEW mv_daily_instrument_summary AS
-SELECT 
-    i.instrument_id,
-    i.symbol,
-    e.exchange_code,
-    t.trade_date,
-    COUNT(*) as num_contracts,
-    SUM(t.contracts) as total_volume,
-    SUM(t.value_in_lakh) as total_value,
-    AVG(t.close) as avg_close,
-    MAX(t.high) as day_high,
-    MIN(t.low) as day_low,
-    SUM(t.open_interest) as total_oi,
-    SUM(t.change_in_oi) as net_oi_change
-FROM trades t
-JOIN instruments i ON t.instrument_id = i.instrument_id
-JOIN exchanges e ON i.exchange_id = e.exchange_id
-GROUP BY i.instrument_id, i.symbol, e.exchange_code, t.trade_date;
-
-CREATE UNIQUE INDEX idx_mv_daily_summary ON mv_daily_instrument_summary(instrument_id, trade_date);
-CREATE INDEX idx_mv_daily_symbol ON mv_daily_instrument_summary(symbol, trade_date);
-
--- Refresh command (run after data load)
--- REFRESH MATERIALIZED VIEW CONCURRENTLY mv_daily_instrument_summary;
-
--- ================================================================
--- HELPER FUNCTIONS
--- ================================================================
-
--- Function to get option chain for a specific date
-CREATE OR REPLACE FUNCTION get_option_chain(
-    p_symbol VARCHAR,
-    p_expiry_date DATE,
-    p_trade_date DATE
-)
-RETURNS TABLE (
-    strike_price DECIMAL,
-    ce_close DECIMAL,
-    ce_oi BIGINT,
-    ce_volume BIGINT,
-    pe_close DECIMAL,
-    pe_oi BIGINT,
-    pe_volume BIGINT
-) AS $$
-BEGIN
-    RETURN QUERY
-    WITH option_data AS (
-        SELECT 
-            ex.strike_price,
-            ex.option_type,
-            t.close,
-            t.open_interest,
-            t.contracts
-        FROM trades t
-        JOIN expiries ex ON t.expiry_id = ex.expiry_id
-        JOIN instruments i ON t.instrument_id = i.instrument_id
-        WHERE i.symbol = p_symbol
-            AND ex.expiry_date = p_expiry_date
-            AND t.trade_date = p_trade_date
-            AND ex.option_type IN ('CE', 'PE')
-    )
-    SELECT 
-        od.strike_price,
-        MAX(CASE WHEN od.option_type = 'CE' THEN od.close END) as ce_close,
-        MAX(CASE WHEN od.option_type = 'CE' THEN od.open_interest END) as ce_oi,
-        MAX(CASE WHEN od.option_type = 'CE' THEN od.contracts END) as ce_volume,
-        MAX(CASE WHEN od.option_type = 'PE' THEN od.close END) as pe_close,
-        MAX(CASE WHEN od.option_type = 'PE' THEN od.open_interest END) as pe_oi,
-        MAX(CASE WHEN od.option_type = 'PE' THEN od.contracts END) as pe_volume
-    FROM option_data od
-    GROUP BY od.strike_price
-    ORDER BY od.strike_price;
-END;
-$$ LANGUAGE plpgsql;
-
--- ================================================================
 -- STATISTICS AND MAINTENANCE
--- ================================================================
 
 -- Analyze tables for query optimizer
 ANALYZE exchanges;

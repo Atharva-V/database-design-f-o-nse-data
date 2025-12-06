@@ -1,25 +1,25 @@
 # F&O Database Analytics Project
 
 ## Overview
-A production-ready relational database system for storing and analyzing high-volume Futures & Options (F&O) data from Indian exchanges (NSE, BSE, MCX). Built with PostgreSQL using normalized 3NF design optimized for 10M+ row scalability and sub-second query performance.
+A relational database system for storing and analyzing high-volume Futures & Options (F&O) data from Indian exchanges. Built with DuckDB using normalized 3NF design optimized for 10M+ row scalability and efficient query performance.
 
 **Dataset**: NSE Future and Options 3M Dataset (2.5M+ rows, 16 columns)  
-**Exchanges Supported**: NSE, BSE, MCX  
-**Time Period**: August 2019 - October 2019  
-**Instruments**: NIFTY, BANKNIFTY, and other index/stock F&O contracts
+**Database**: DuckDB (embedded, OLAP-optimized)  
+**Time Period**: August 2019 - November 2019  
+**Records Loaded**: 2,533,210 trades, 328 instruments, 77,976 expiry contracts
 
 ## Architecture
 
 ### Database Schema (3NF Normalized)
 
 ```
-EXCHANGES (10 rows) 
-    ↓ 1:N
-INSTRUMENTS (1K-5K rows)
-    ↓ 1:N
-EXPIRIES (50K-100K rows) ← Contract specifications
-    ↓ 1:N
-TRADES (2.5M+ rows) ← Daily OHLC data
+EXCHANGES (3 rows) 
+    1:N
+INSTRUMENTS (328 rows)
+    1:N
+EXPIRIES (77,976 rows) - Contract specifications
+    1:N
+TRADES (2,533,210 rows) - Daily OHLC data
 ```
 
 **Design Philosophy**:
@@ -70,23 +70,13 @@ trades_2019_08, trades_2019_09, trades_2019_10, ...
 
 #### Indexing Strategy
 ```sql
--- B-Tree for point queries
+-- B-Tree indexes for point queries
 CREATE INDEX idx_trades_instrument_date ON trades(instrument_id, trade_date);
+CREATE INDEX idx_instruments_symbol ON instruments(symbol, exchange_id);
+CREATE INDEX idx_expiries_date ON expiries(expiry_date);
 
--- BRIN for time-series (1% size of B-tree)
-CREATE INDEX idx_trades_timestamp_brin ON trades USING BRIN(timestamp);
-
--- Covering index (index-only scans)
-CREATE INDEX idx_trades_covering ON trades(instrument_id, trade_date, close, open_interest);
-
--- Partial index (skip zeros)
+-- Partial index (skip zero-volume trades)
 CREATE INDEX idx_trades_volume ON trades(contracts) WHERE contracts > 0;
-```
-
-#### Materialized View for Aggregates
-```sql
--- Pre-computed daily summaries (refresh after load)
-mv_daily_instrument_summary
 ```
 
 ### 3. Query Performance Benchmarks
@@ -115,48 +105,62 @@ fo-database-analytics/
 ├── sql/
 │   ├── 01_schema_ddl.sql          # CREATE TABLE, indexes, partitions
 │   ├── 02_advanced_queries.sql    # 7 analytical queries
-│   └── 03_optimization_explain.sql # EXPLAIN ANALYZE benchmarks
+│   └── 03_optimization_explain.sql # Performance analysis
 │
 ├── scripts/
-│   ├── load_data_duckdb.py      # DuckDB data loader
-│   └── visualize_results.py     # Generate charts and visualizations
+│   ├── load_data_duckdb.py        # DuckDB data loader
+│   ├── run_all_queries.py         # Execute all 7 queries
+│   └── visualize_results.py       # Generate charts
+│
+├── output images/
+│   ├── ER_Diagram.png             # ER diagram image
+│   └── loading dataset.png        # Data load screenshot
+│
+├── query_outputs/                  # CSV outputs from queries
 │
 ├── NSE_data_3M.csv                # Dataset (2.5M rows)
-│
+├── fo_analytics.duckdb            # DuckDB database file
 ├── README.md                      # This file
-└── DESIGN_REASONING.md            # Detailed design document
+└── DESIGN_REASONING.md            # Design reasoning document
 ```
 
 ## Setup Instructions
 
 ### Prerequisites
 - Python 3.8+
-- DuckDB 0.9+
-- Libraries: `pandas`, `duckdb`, `matplotlib`, `seaborn`
+- Libraries: `pandas`, `duckdb`
 
 ### Installation
 
 ```powershell
 # Install Python dependencies
-pip install pandas duckdb matplotlib seaborn jupyter
+pip install -r requirements.txt
 ```
 
 ### Load Data
 
 ```powershell
-# Load data using DuckDB (fast, simple, no server needed)
+# Load data into DuckDB (fast, embedded database)
 python scripts/load_data_duckdb.py
+
+# Expected output:
+# Created schema with 4 tables
+# Loaded 2,533,210 trades
+# Loaded 328 instruments
+# Loaded 77,976 expiry contracts
 ```
 
 ### Run Queries
 
 ```powershell
-# Test queries in Python
-python -c "import duckdb; conn = duckdb.connect('fo_analytics.duckdb'); print(conn.execute('SELECT COUNT(*) FROM trades').fetchone())"
+# Run all 7 analytical queries
+python scripts/run_all_queries.py
 
-# Or open DuckDB CLI
-python -c "import duckdb; duckdb.connect('fo_analytics.duckdb')"
+# Query individual results
+python -c "import duckdb; conn = duckdb.connect('fo_analytics.duckdb'); print(conn.execute('SELECT COUNT(*) FROM trades').fetchone())"
 ```
+
+**Query Outputs**: Results are saved in `query_outputs/` folder as CSV files.
 
 ## Analytical Queries
 
@@ -166,8 +170,8 @@ Identifies instruments with highest trading interest momentum across exchanges.
 ### Query 2: 7-Day Volatility Analysis
 Calculates rolling standard deviation for NIFTY options to measure risk.
 
-### Query 3: Cross-Exchange Comparison
-Compares settlement prices between NSE, BSE, and MCX (template for multi-exchange).
+### Query 3: Cross-Exchange Volume Comparison
+Compares trading volumes and values across exchanges and instrument types.
 
 ### Query 4: Option Chain Summary
 Builds complete option chain with calls/puts, volumes, OI, and put-call ratios.
@@ -243,7 +247,7 @@ SELECT compress_chunk('trades_2019_08');
 **Bonus**: Efficient option chain queries (GROUP BY expiry_date, strike_price)
 
 ### Denormalized instrument_id in TRADES
-**Trade-off**: Breaks strict 3NF (trades → expiries → instruments)  
+**Trade-off**: Breaks strict 3NF (trades to expiries to instruments)  
 **Justification**: 80% of queries aggregate by symbol, avoiding two joins  
 **Result**: 40-60% faster aggregations without sacrificing data integrity
 
@@ -258,51 +262,29 @@ SELECT compress_chunk('trades_2019_08');
 - Used for non-sequential columns (instrument_id, strike_price)
 - Better for point queries and small ranges
 
-## Testing & Validation
+## Results
 
-### Data Quality Checks
-```sql
--- Check for orphaned records
-SELECT COUNT(*) FROM trades t 
-LEFT JOIN expiries e ON t.expiry_id = e.expiry_id 
-WHERE e.expiry_id IS NULL;
+### Database Statistics
+- **Total Trades**: 2,533,210
+- **Total Instruments**: 328
+- **Total Expiries**: 77,976
+- **Date Range**: 2019-08-01 to 2019-11-15
+- **Total Volume**: 1.58 billion contracts
+- **Total Value**: 10.29 trillion lakh
 
--- Validate OHLC relationships
-SELECT COUNT(*) FROM trades 
-WHERE high < low OR high < close OR low > close;
+### Top Query Results
+- **Highest OI Change**: IDEA (1.34B), NIFTY (568M)
+- **Most Volatile**: MRF (79.83 stddev), BANKNIFTY (33.42)
+- **Peak Volume Day**: BANKNIFTY 36.8M contracts (Nov 14, 2019)
+- **Most Active Expiry**: BANKNIFTY Sep 26 (82.9M volume)
 
--- Verify partition distribution
-SELECT 
-    tableoid::regclass as partition,
-    COUNT(*) as rows,
-    pg_size_pretty(pg_relation_size(tableoid)) as size
-FROM trades
-GROUP BY tableoid;
-```
+## Potential Enhancements
 
-### Performance Metrics
-```sql
--- Query execution statistics
-SELECT 
-    schemaname,
-    relname,
-    seq_scan,
-    idx_scan,
-    n_tup_ins,
-    n_tup_upd,
-    n_tup_del
-FROM pg_stat_user_tables
-WHERE schemaname = 'public';
-```
-
-## Future Enhancements
-
-1. **Real-time Streaming**: Kafka + PostgreSQL for live data ingestion
-2. **Calculated Columns**: Implied volatility, Greeks (Delta, Gamma)
-3. **Alert System**: Unusual OI changes, price breakouts
-4. **REST API**: Flask/FastAPI for option chain endpoints
-5. **Dashboard**: Grafana/Metabase for visualization
-6. **Machine Learning**: Predictive models for price movements
+1. **Real-time Data**: Stream live market data from exchange APIs
+2. **Advanced Analytics**: Implied volatility calculations, Greeks
+3. **Visualization Dashboard**: Interactive charts for option chains
+4. **Historical Backtesting**: Strategy performance analysis
+5. **Data Export**: REST API for programmatic access
 
 ## References
 
@@ -311,16 +293,14 @@ WHERE schemaname = 'public';
 - **BRIN Indexes**: [PostgreSQL Wiki](https://wiki.postgresql.org/wiki/BRIN)
 - **Database Normalization**: [3NF Explained](https://en.wikipedia.org/wiki/Third_normal_form)
 
-## Author
+## Skills Covered
 
-This project demonstrates:
-- Database design expertise (ER modeling, normalization)
-- SQL proficiency (window functions, CTEs, EXPLAIN ANALYZE)
+This project covers:
+- Database design (ER modeling, normalization)
+- SQL queries (window functions, CTEs, EXPLAIN ANALYZE)
 - Performance optimization (indexing, partitioning)
-- Scalability planning (HFT-ready architecture)
-- Financial domain knowledge (F&O trading, option chains)
-
-**Suitable for**: Quant data engineer, Trading systems developer, Financial analytics roles
+- Scalability planning for HFT systems
+- F&O trading concepts (option chains, open interest)
 
 ---
 
@@ -328,22 +308,18 @@ This project demonstrates:
 
 ```powershell
 # Clone repository
-git clone https://github.com/yourusername/fo-database-analytics.git
-cd fo-database-analytics
+git clone https://github.com/Atharva-V/database-design-f-o-nse-data.git
+cd database-design-f-o-nse-data
 
-# Setup database
-psql -U postgres -f sql/01_schema_ddl.sql
+# Install dependencies
+pip install -r requirements.txt
 
-# Load data (choose one)
-python scripts/load_data.py              # PostgreSQL
-python scripts/load_data_duckdb.py       # DuckDB (faster)
+# Load data into DuckDB
+python scripts/load_data_duckdb.py
 
-# Run analytics
-psql -U postgres -d fo_analytics -f sql/02_advanced_queries.sql
+# Run all queries
+python scripts/run_all_queries.py
 
 # View ER diagram
-# Open docs/er_diagram.md in VS Code or GitHub
+# See output images/ER_Diagram.png or docs/er_diagram.md
 ```
-
-## License
-MIT License - Free for educational and commercial use
