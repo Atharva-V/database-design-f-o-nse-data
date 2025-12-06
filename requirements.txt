@@ -1,0 +1,30 @@
+# F&O Database Analytics - Python Dependencies
+
+# Core Data Processing
+pandas>=1.3.0
+numpy>=1.21.0
+
+# Database Engine
+duckdb>=0.9.0
+
+# Data Visualization
+matplotlib>=3.4.0
+seaborn>=0.11.0
+plotly>=5.0.0
+
+# Jupyter Support
+jupyter>=1.0.0
+ipykernel>=6.0.0
+notebook>=6.4.0
+
+# Utilities
+python-dateutil>=2.8.0
+pytz>=2021.1
+
+# Optional: Performance
+pyarrow>=6.0.0  # Faster CSV reading with pandas
+fastparquet>=0.8.0  # Parquet file support
+
+# Development
+black>=21.0  # Code formatting
+pylint>=2.11.0  # Code linting
