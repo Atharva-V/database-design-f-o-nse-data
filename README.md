@@ -24,9 +24,9 @@ TRADES (2,533,210 rows) - Daily OHLC data
 
 **Design Philosophy**:
 - **3NF Normalization**: Eliminates redundancy, ensures data integrity
-- **Partitioned by Date**: Monthly partitions for time-series optimization
-- **Indexed for Performance**: B-tree, BRIN, and covering indexes
+- **Indexed for Performance**: B-tree indexes on foreign keys and date columns
 - **Denormalized References**: instrument_id in trades for fast aggregations
+- **Optimized Storage**: DuckDB's columnar format for analytical queries
 
 ### Why 3NF Over Star Schema?
 
@@ -58,15 +58,16 @@ Star schema would create massive duplication (strike_price, option_type repeated
 
 ### 2. Performance Optimizations
 
-#### Partitioning Strategy
+#### Query Optimization Strategy
 ```sql
--- Monthly partitions for date-based queries
-trades_2019_08, trades_2019_09, trades_2019_10, ...
+-- DuckDB automatically optimizes columnar scans
+-- Filter pushdown on date ranges
+WHERE trade_date >= '2019-08-01' AND trade_date <= '2019-08-31'
 ```
 **Benefits**:
-- Partition pruning reduces scan by 80-90%
-- Easy archival (DROP old partitions)
-- Parallel query execution per partition
+- Columnar storage reads only required columns
+- Automatic filter pushdown reduces I/O
+- Vectorized execution for fast aggregations
 
 #### Indexing Strategy
 ```sql
@@ -88,11 +89,11 @@ CREATE INDEX idx_trades_volume ON trades(contracts) WHERE contracts > 0;
 | OI Analysis | 890ms | 124ms | **86% faster** |
 
 **Techniques Used**:
-- Partition pruning
-- Covering indexes
+- Columnar storage (reads only needed columns)
+- B-tree indexes on frequently filtered columns
 - Window functions (avoid self-joins)
-- Materialized views
-- Parallel workers
+- Filter pushdown optimization
+- Vectorized query execution
 
 ## Project Structure
 
@@ -200,42 +201,49 @@ Ranks expiry cycles by trading activity (volume, value, OI).
 
 ### Scaling Strategies
 
-#### 1. Partitioning
-```sql
--- Quarterly partitions for long-term data
-CREATE TABLE trades_2020_q1 PARTITION OF trades 
-    FOR VALUES FROM ('2020-01-01') TO ('2020-04-01');
-```
-
-#### 2. Archival
-```sql
--- Move old partitions to archive tablespace
-ALTER TABLE trades_2019_08 SET TABLESPACE archive_space;
-```
-
-#### 3. Read Replicas
-- **Master**: Write operations (data ingestion)
-- **Replica 1**: Analytics queries
-- **Replica 2**: Option chain APIs
-
-#### 4. Connection Pooling
+#### 1. File-Based Partitioning
 ```python
-# Use pgbouncer for 1000+ concurrent connections
-max_connections = 1000
-shared_buffers = 8GB
-effective_cache_size = 24GB
+# Export old data to Parquet for archival
+conn.execute("""
+    COPY (SELECT * FROM trades WHERE trade_date < '2020-01-01') 
+    TO 'archive/trades_2019.parquet' (FORMAT PARQUET)
+""")
 ```
 
-#### 5. Parallel Queries
-```sql
-SET max_parallel_workers_per_gather = 4;
-ALTER TABLE trades SET (parallel_workers = 4);
+#### 2. Multiple Database Files
+```python
+# Create separate DuckDB files per year
+conn_2019 = duckdb.connect('trades_2019.duckdb')
+conn_2020 = duckdb.connect('trades_2020.duckdb')
 ```
 
-#### 6. Compression (TimescaleDB Extension)
-```sql
--- Compress old partitions (50-70% size reduction)
-SELECT compress_chunk('trades_2019_08');
+#### 3. Read-Only Mode
+- **Primary File**: Write operations (data ingestion)
+- **Read-Only Copy**: Serve analytics queries
+- **Parquet Export**: API serving layer
+
+#### 4. Memory Management
+```python
+# DuckDB memory configuration
+import duckdb
+conn = duckdb.connect('trades.duckdb')
+conn.execute("SET memory_limit='8GB'")
+conn.execute("SET threads=4")
+```
+
+#### 5. Parallel Execution
+```python
+# DuckDB automatically uses available cores
+conn.execute("SET threads=8")  # Use 8 threads for queries
+```
+
+#### 6. Compression
+```python
+# Export to compressed Parquet (automatic compression)
+conn.execute("""
+    COPY trades TO 'trades_compressed.parquet' 
+    (FORMAT PARQUET, COMPRESSION 'ZSTD')
+""")
 ```
 
 ## Design Decisions
@@ -251,16 +259,17 @@ SELECT compress_chunk('trades_2019_08');
 **Justification**: 80% of queries aggregate by symbol, avoiding two joins  
 **Result**: 40-60% faster aggregations without sacrificing data integrity
 
-### BRIN vs B-Tree for Timestamps
-**BRIN Index**:
-- Size: 1-2% of data (vs. 15-20% for B-tree)
-- Perfect for sequential time-series data
-- Minimal write overhead
-- Ideal for `WHERE timestamp >= '2019-08-01'` queries
+### Indexing Strategy in DuckDB
+**B-Tree Indexes**:
+- Created on foreign keys and frequently filtered columns
+- Used for joins (instrument_id, expiry_id)
+- Efficient for date range queries on trade_date
+- Smaller overhead compared to PostgreSQL (columnar storage benefit)
 
-**B-Tree Index**:
-- Used for non-sequential columns (instrument_id, strike_price)
-- Better for point queries and small ranges
+**Columnar Storage Advantage**:
+- DuckDB stores data column-wise, not row-wise
+- Queries only read needed columns (e.g., SELECT close skips open, high, low)
+- Automatic compression per column reduces I/O
 
 ## Results
 
@@ -315,30 +324,6 @@ SELECT compress_chunk('trades_2019_08');
 ### Query 7: Most Active Options by Expiry Month
 ![Active Expiries](output%20images/most_active_options_by_expiry_month.png)
 *Ranking of expiry cycles by trading volume and activity metrics*
-
-## Potential Enhancements
-
-1. **Real-time Data**: Stream live market data from exchange APIs
-2. **Advanced Analytics**: Implied volatility calculations, Greeks
-3. **Visualization Dashboard**: Interactive charts for option chains
-4. **Historical Backtesting**: Strategy performance analysis
-5. **Data Export**: REST API for programmatic access
-
-## References
-
-- **Dataset Source**: [Kaggle NSE F&O 3M Dataset](https://www.kaggle.com/datasets/sunnysai12345/nse-future-and-options-dataset-3m)
-- **PostgreSQL Partitioning**: [Official Docs](https://www.postgresql.org/docs/current/ddl-partitioning.html)
-- **BRIN Indexes**: [PostgreSQL Wiki](https://wiki.postgresql.org/wiki/BRIN)
-- **Database Normalization**: [3NF Explained](https://en.wikipedia.org/wiki/Third_normal_form)
-
-## Skills Covered
-
-This project covers:
-- Database design (ER modeling, normalization)
-- SQL queries (window functions, CTEs, EXPLAIN ANALYZE)
-- Performance optimization (indexing, partitioning)
-- Scalability planning for HFT systems
-- F&O trading concepts (option chains, open interest)
 
 ---
 
