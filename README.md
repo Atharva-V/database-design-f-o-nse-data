@@ -278,6 +278,44 @@ SELECT compress_chunk('trades_2019_08');
 - **Peak Volume Day**: BANKNIFTY 36.8M contracts (Nov 14, 2019)
 - **Most Active Expiry**: BANKNIFTY Sep 26 (82.9M volume)
 
+## Visualizations
+
+### Database Schema
+![ER Diagram](output%20images/ER_Diagram.png)
+*Entity-Relationship diagram showing normalized 3NF schema with 4 tables*
+
+### Data Loading Process
+![Loading Dataset](output%20images/loading%20dataset.png)
+*DuckDB data loading output showing 2.5M+ records ingested successfully*
+
+### Query 1: Top 10 Symbols by Open Interest Change
+![Top 10 OI Change](output%20images/top_10_symbols_by_OI_change.png)
+*Identifies instruments with highest trading interest momentum across exchanges*
+
+### Query 2: 7-Day Rolling Volatility Analysis
+![7-Day Volatility](output%20images/7_day_rolling_volatility_by_top_symbols.png)
+*Rolling standard deviation for top symbols showing price volatility trends*
+
+### Query 3: Cross-Exchange Volume Comparison
+![Cross Exchange Comparison](output%20images/cross_exchange_volume_comparison.png)
+*Comparative analysis of trading volumes across instrument types*
+
+### Query 4: NIFTY Option Chain Summary
+![Option Chain](output%20images/nifty_option_chain_summary.png)
+*Complete option chain with calls/puts, volumes, and open interest*
+
+### Query 5: Highest Volume Trading Days
+![Max Volume Days](output%20images/highest_volume_trading_days.png)
+*Performance-optimized query showing peak trading activity by symbol*
+
+### Query 6: Intraday Price Movement Analysis
+![Price Movement](output%20images/intraday_price_movement_analysis.png)
+*High-Low range analysis identifying volatile trading sessions*
+
+### Query 7: Most Active Options by Expiry Month
+![Active Expiries](output%20images/most_active_options_by_expiry_month.png)
+*Ranking of expiry cycles by trading volume and activity metrics*
+
 ## Potential Enhancements
 
 1. **Real-time Data**: Stream live market data from exchange APIs
